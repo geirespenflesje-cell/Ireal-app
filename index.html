@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jazz Chart Reader</title>
+<style>
+  :root { --bg: #faf6eb; --ink: #000; --accent: #ffeb3b; --focus: #005fcc; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Georgia, serif;
+    line-height: 1.5;
+  }
+  a:focus, button:focus, input:focus, select:focus {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  header {
+    background: #fff;
+    border-bottom: 2px solid #000;
+    padding: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .sr-only {
+    position: absolute;
+    left: -10000px;
+  }
+  h1 {
+    font-size: 14px;
+    letter-spacing: 5px;
+    text-align: center;
+    font-weight: 400;
+    margin: 32px 0 8px;
+    text-transform: uppercase;
+  }
+  #meta {
+    text-align: center;
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  #controls {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  #controls input, #controls select {
+    flex: 1;
+    min-width: 200px;
+    padding: 12px;
+    border: 2px solid #000;
+    font-size: 16px;
+    background: #fff;
+    color: #000;
+  }
+  #songSelect { flex-basis: 100%; }
+  #controls button {
+    padding: 12px 16px;
+    border: 2px solid #000;
+    background: #000;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  #controls button[aria-pressed="true"] {
+    background: var(--accent);
+    color: #000;
+  }
+  main { padding: 24px 16px 48px; }
+  #chart { max-width: 760px; margin: 0 auto; }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-bottom: 16px;
+  }
+  .bar {
+    border-left: 1.5px solid #000;
+    padding: 4px 8px 14px 10px;
+    min-height: 52px;
+    position: relative;
+  }
+  .bar:last-child { border-right: 1.5px solid #000; }
+  .bar.section-start { border-left-width: 3px; }
+  .bar-top {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    min-height: 14px;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+  }
+  .section { font-weight: 700; letter-spacing: 0.5px; }
+  .chord {
+    font-size: 15px;
+    font-style: italic;
+    text-align: left;
+    display: block;
+    line-height: 1.35;
+  }
+  .bar.playing { background: var(--accent); }
+  #status {
+    max-width: 760px;
+    margin: 16px auto 0;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div id="controls">
+    <label class="sr-only" for="irealInput">iReal link</label>
+    <input id="irealInput" type="text" placeholder="Paste irealb:// link here" aria-label="Paste iReal link">
+    <button id="importBtn" type="button">IMPORT</button>
+    <button id="playBtn" type="button" aria-pressed="false" aria-label="Play chart">▶ PLAY</button>
+    <label class="sr-only" for="songSelect">Song in this link</label>
+    <select id="songSelect" hidden></select>
+  </div>
+</header>
+<main>
+  <h1 id="title">Jazz Chord Chart</h1>
+  <div id="meta">Medium Swing • Key: C • 32 bars</div>
+  <div id="chart" role="grid" aria-label="Chord chart"></div>
+  <div id="status" role="status" aria-live="polite">Ready. Paste a link and press Import.</div>
+</main>
+<script>
+const MUSIC_PREFIX = "1r34LbKcu7";
+
+const DEMO_CHORDS = ["Cmaj7","Dm7","G7","Cmaj7","Am7","D7","Gmaj7","Cmaj7","Fmaj7","Bm7b5","E7","Am7","Dm7","G7","Cmaj7","Am7","Em7","A7","Dmaj7","Gmaj7","Bm7","E7","Am7","Dm7","G#m7b5","C#7","F#maj7","Bm7","Cmaj7","Fmaj7","Bbmaj7","Ebmaj7"];
+
+let playlist = [];
+let bars = DEMO_CHORDS.map(chord => ({ chords: [chord], section: "" }));
+let song = { title: "Jazz Chord Chart", composer: "", style: "Medium Swing", key: "C", bpm: null };
+let pos = 0;
+let timer = null;
+
+function unscramble(s) {
+  let rest = s;
+  let out = "";
+  while (rest.length > 50) {
+    const chunk = rest.slice(0, 50);
+    rest = rest.slice(50);
+    out += rest.length < 2 ? chunk : obfusc50(chunk);
+  }
+  return out + rest;
+}
+
+function obfusc50(s) {
+  const next = s.split("");
+  for (let i = 0; i < 5; i++) {
+    next[49 - i] = s[i];
+    next[i] = s[49 - i];
+  }
+  for (let i = 10; i < 24; i++) {
+    next[49 - i] = s[i];
+    next[i] = s[49 - i];
+  }
+  return next.join("");
+}
+
+function blankBar() {
+  return { chords: [], section: "" };
+}
+
+function parseChart(input) {
+  const measures = [];
+  let startRepeat = null;
+  let endRepeat = null;
+  let lastChord = null;
+  let timeSignature = null;
+  let thirdEnding = false;
+  let dcAlFine = false;
+  let dcAlCoda = false;
+  let dsAlCoda = false;
+  let fineAt = null;
+  let codaAt = null;
+  let segnoAt = null;
+
+  function createBar() {
+    if (measures.length === 0 || measures[measures.length - 1].chords.length !== 0) {
+      measures.push(blankBar());
+    }
+  }
+
+  function pushChord(match) {
+    if (measures.length === 0) measures.push(blankBar());
+    let chord = match[0];
+    if (chord.startsWith("W") && lastChord) chord = chord.replace("W", lastChord);
+    else lastChord = chord.split("/")[0];
+    measures[measures.length - 1].chords.push(chord);
+  }
+
+  function checkComments(match) {
+    const text = match[1].toLowerCase();
+    if (text === "d.c. al 3rd ending") thirdEnding = true;
+    if (text === "d.c. al fine") dcAlFine = true;
+    if (text === "d.c. al coda") dcAlCoda = true;
+    if (text === "d.s. al coda") dsAlCoda = true;
+    if (text === "fine") fineAt = measures.length;
+  }
+
+  function repeatLast() {
+    if (measures.length < 2) return;
+    measures[measures.length - 1].chords = measures[measures.length - 2].chords.slice();
+  }
+
+  function repeatLastNew() {
+    if (!measures.length) return;
+    measures.push({ chords: measures[measures.length - 1].chords.slice(), section: "" });
+  }
+
+  function repeatTwo() {
+    if (measures.length < 3) return;
+    measures[measures.length - 1].chords = measures[measures.length - 3].chords.slice();
+    measures.push({ chords: measures[measures.length - 2].chords.slice(), section: "" });
+  }
+
+  function startRepeatHere() {
+    createBar();
+    startRepeat = measures.length - 1;
+    endRepeat = null;
+  }
+
+  function markEnding(match) {
+    if (parseInt(match[1], 10) === 1) endRepeat = measures.length - 1;
+  }
+
+  function copyRange(from, to) {
+    for (let i = from; i < to; i++) {
+      measures.push({
+        chords: measures[i].chords.slice(),
+        section: measures[i].section
+      });
+    }
+  }
+
+  function expandRepeat() {
+    if (startRepeat == null) return;
+    if (endRepeat == null) endRepeat = measures.length;
+    copyRange(startRepeat, endRepeat);
+    createBar();
+  }
+
+  function expandNavigation() {
+    if (thirdEnding) { expandRepeat(); thirdEnding = false; }
+    if (dcAlFine && fineAt != null) { copyRange(0, fineAt); dcAlFine = false; }
+    if (dcAlCoda && codaAt != null) { copyRange(0, codaAt); dcAlCoda = false; }
+    if (dsAlCoda && segnoAt != null && codaAt != null) { copyRange(segnoAt, codaAt); dsAlCoda = false; }
+    if (!thirdEnding && !dcAlFine && !dcAlCoda && !dsAlCoda) createBar();
+  }
+
+  function markSection(match) {
+    const letter = match[0].slice(1);
+    if (measures.length === 0) measures.push(blankBar());
+    const current = measures[measures.length - 1];
+    if (!current.section && current.chords.length === 0) current.section = letter;
+  }
+
+  const rules = [
+    { token: "XyQ" },
+    { token: /\*\w/, operation: markSection },
+    { token: /<(.*?)>/, operation: checkComments },
+    { token: /T(\d+)/, operation: match => { timeSignature = match[1]; } },
+    { token: "x", operation: repeatLast },
+    { token: "Kcl", operation: repeatLastNew },
+    { token: "r|XyQ", operation: repeatTwo },
+    { token: /Y+/ },
+    { token: "n", operation: () => { if (!measures.length) measures.push(blankBar()); measures[measures.length - 1].chords.push(null); } },
+    { token: "p" },
+    { token: "U" },
+    { token: "S", operation: () => { segnoAt = Math.max(0, measures.length - 1); } },
+    { token: "Q", operation: () => { codaAt = measures.length; } },
+    { token: "{", operation: startRepeatHere },
+    { token: "}", operation: expandRepeat },
+    { token: "LZ|", operation: createBar },
+    { token: "|", operation: createBar },
+    { token: "LZ", operation: createBar },
+    { token: "[", operation: createBar },
+    { token: "]", operation: expandNavigation },
+    { token: /N(\d)/, operation: markEnding },
+    { token: "Z", operation: expandNavigation },
+    { token: /[A-GW][+\-^\dhob#suadlt]*(\/[A-G][#b]?)?/, operation: pushChord }
+  ];
+
+  let source = input;
+  while (source) {
+    let matched = false;
+    for (const rule of rules) {
+      if (typeof rule.token === "string") {
+        if (!source.startsWith(rule.token)) continue;
+        if (rule.operation) rule.operation();
+        source = source.slice(rule.token.length).trim();
+        matched = true;
+        break;
+      }
+      const match = source.match(rule.token);
+      if (match && match.index === 0) {
+        if (rule.operation) rule.operation(match);
+        source = source.slice(match[0].length).trim();
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      if (source.length <= 1) break;
+      source = source.slice(1);
+    }
+  }
+
+  return {
+    bars: measures.filter(bar => bar.chords.length > 0),
+    timeSignature
+  };
+}
+
+function decodeText(value) {
+  let text = value.trim();
+  for (let i = 0; i < 2; i++) {
+    if (!/%[0-9A-Fa-f]{2}/.test(text)) break;
+    try { text = decodeURIComponent(text); } catch (error) { break; }
+  }
+  return text;
+}
+
+function makeSong(data) {
+  const parts = data.split(/=+/).filter(part => part !== "");
+  let title = "Untitled";
+  let composer = "";
+  let style = "";
+  let key = "C";
+  let music = "";
+  let bpm = null;
+
+  if (parts.length === 7) {
+    [title, composer, style, key, music, bpm] = parts;
+  } else if (parts.length === 8 && parts[4].startsWith(MUSIC_PREFIX)) {
+    [title, composer, style, key, music, , bpm] = parts;
+  } else if (parts.length === 8 && parts[5].startsWith(MUSIC_PREFIX)) {
+    [title, composer, style, key, , music, bpm] = parts;
+  } else if (parts.length === 9) {
+    [title, composer, style, key, , music, , bpm] = parts;
+  } else {
+    return null;
+  }
+
+  const prefixAt = music.indexOf(MUSIC_PREFIX);
+  const raw = prefixAt >= 0 ? unscramble(music.slice(prefixAt + MUSIC_PREFIX.length)) : music;
+  const chart = parseChart(raw);
+  // iReal stores the time signature in a leading N.C. cell. That cell is not a played bar.
+  while (chart.bars.length > 1 && chart.bars[0].chords.every(chord => chord == null)) {
+    const section = chart.bars[0].section;
+    chart.bars.shift();
+    if (section && !chart.bars[0].section) chart.bars[0].section = section;
+  }
+  if (!chart.bars.length) return null;
+
+  return {
+    title: title.replace(/_/g, " "),
+    composer,
+    style,
+    key,
+    bpm: bpm ? parseInt(bpm, 10) : null,
+    timeSignature: chart.timeSignature,
+    bars: chart.bars
+  };
+}
+
+function parseIReal(input) {
+  const found = input.match(/ireal(?:b|book):\/\/[^\s"'<>]+/i);
+  let body = decodeText(found ? found[0] : input);
+  body = body.replace(/^ireal(?:b|book):\/\//i, "");
+  let parts = body.split("===").map(part => part.trim()).filter(Boolean);
+  if (parts.length > 1 && !parts[parts.length - 1].includes("=")) parts.pop();
+  return parts.map(makeSong).filter(Boolean);
+}
+
+function prettyChord(symbol) {
+  if (!symbol) return "N.C.";
+  const match = symbol.match(/^([A-G])([#b]?)([^/]*)(\/([A-G])([#b]?))?$/);
+  if (!match) return symbol;
+  let quality = match[3].replace(/^h7?/, "m7b5").replace(/^o/, "dim").replace(/\^/g, "maj").replace(/-/g, "m");
+  if (quality === "+") quality = "aug";
+  const bass = match[4] ? "/" + match[5] + match[6] : "";
+  return match[1] + match[2] + quality + bass;
+}
+
+function displayComposer(name) {
+  const bits = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (bits.length < 2) return bits.join(" ");
+  return bits.slice(1).join(" ") + " " + bits[0];
+}
+
+function beatsPerBar(timeSignature) {
+  if (!timeSignature) return 4;
+  if (timeSignature.length >= 3) return parseInt(timeSignature.slice(0, -1), 10) || 4;
+  return parseInt(timeSignature[0], 10) || 4;
+}
+
+function barDuration() {
+  const bpm = song.bpm && song.bpm >= 40 && song.bpm <= 320 ? song.bpm : 120;
+  return beatsPerBar(song.timeSignature) * (60000 / bpm);
+}
+
+function chordLabel(bar) {
+  return bar.chords.map(prettyChord).join(", ");
+}
+
+function announce(message) {
+  document.getElementById("status").textContent = message;
+}
+
+function stopPlayback() {
+  if (timer) clearInterval(timer);
+  timer = null;
+  pos = 0;
+  const button = document.getElementById("playBtn");
+  button.setAttribute("aria-pressed", "false");
+  button.setAttribute("aria-label", "Play chart");
+  button.textContent = "▶ PLAY";
+  document.querySelectorAll(".bar.playing").forEach(bar => bar.classList.remove("playing"));
+}
+
+function render() {
+  const chart = document.getElementById("chart");
+  chart.replaceChildren();
+  chart.setAttribute("aria-label", "Chord chart with " + bars.length + " bars");
+  const rows = Math.max(1, Math.ceil(bars.length / 4));
+  for (let rowIndex = 0; rowIndex < rows; rowIndex++) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.setAttribute("role", "row");
+    for (let column = 0; column < 4; column++) {
+      const index = rowIndex * 4 + column;
+      if (index >= bars.length) break;
+      const bar = bars[index];
+      const cell = document.createElement("div");
+      cell.className = "bar" + (bar.section ? " section-start" : "");
+      cell.id = "b" + index;
+      cell.setAttribute("role", "gridcell");
+      const label = "Bar " + (index + 1) + (bar.section ? ", section " + bar.section : "") + ", " + chordLabel(bar);
+      cell.setAttribute("aria-label", label);
+
+      const top = document.createElement("div");
+      top.className = "bar-top";
+      if (bar.section) {
+        const section = document.createElement("span");
+        section.className = "section";
+        section.textContent = bar.section;
+        top.appendChild(section);
+      }
+      const number = document.createElement("span");
+      number.className = "bar-number";
+      number.textContent = String(index + 1);
+      top.appendChild(number);
+      cell.appendChild(top);
+
+      bar.chords.forEach(chord => {
+        const line = document.createElement("span");
+        line.className = "chord";
+        line.textContent = prettyChord(chord);
+        cell.appendChild(line);
+      });
+      row.appendChild(cell);
+    }
+    chart.appendChild(row);
+  }
+}
+
+function showMeta() {
+  document.getElementById("title").textContent = song.title;
+  const bits = [];
+  const composer = displayComposer(song.composer);
+  if (composer) bits.push(composer);
+  if (song.style) bits.push(song.style);
+  bits.push("Key: " + prettyChord(song.key));
+  bits.push(bars.length + (bars.length === 1 ? " bar" : " bars"));
+  if (song.bpm) bits.push(song.bpm + " bpm");
+  document.getElementById("meta").textContent = bits.join(" • ");
+}
+
+function showSong(index) {
+  stopPlayback();
+  song = playlist[index];
+  bars = song.bars;
+  showMeta();
+  render();
+  announce("Imported " + song.title + " with " + bars.length + " bars.");
+}
+
+function fillSongSelect() {
+  const select = document.getElementById("songSelect");
+  select.replaceChildren();
+  if (playlist.length < 2) {
+    select.hidden = true;
+    return;
+  }
+  playlist.forEach((item, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = item.title;
+    select.appendChild(option);
+  });
+  select.hidden = false;
+  select.value = "0";
+}
+
+function importLink() {
+  const value = document.getElementById("irealInput").value;
+  if (!value.trim()) {
+    announce("Paste an iReal link first.");
+    return;
+  }
+  const songs = parseIReal(value);
+  if (!songs.length) {
+    announce("Could not read that iReal link.");
+    return;
+  }
+  playlist = songs;
+  fillSongSelect();
+  showSong(0);
+  if (songs.length > 1) {
+    announce("Imported " + songs.length + " songs. Showing " + songs[0].title + ".");
+  }
+}
+
+function togglePlay(event) {
+  const button = event.currentTarget;
+  if (timer) {
+    stopPlayback();
+    announce("Stopped");
+    return;
+  }
+  if (!bars.length) return;
+  button.setAttribute("aria-pressed", "true");
+  button.setAttribute("aria-label", "Stop chart");
+  button.textContent = "■ STOP";
+  const tick = () => {
+    document.querySelectorAll(".bar.playing").forEach(bar => bar.classList.remove("playing"));
+    const cell = document.getElementById("b" + pos);
+    const current = bars[pos];
+    if (cell) {
+      cell.classList.add("playing");
+      cell.scrollIntoView({ block: "nearest" });
+    }
+    announce("Playing bar " + (pos + 1) + " of " + bars.length + ": " + chordLabel(current));
+    pos = (pos + 1) % bars.length;
+  };
+  tick();
+  timer = setInterval(tick, barDuration());
+}
+
+document.getElementById("importBtn").addEventListener("click", importLink);
+document.getElementById("irealInput").addEventListener("keydown", event => {
+  if (event.key === "Enter") importLink();
+});
+document.getElementById("playBtn").addEventListener("click", togglePlay);
+document.getElementById("songSelect").addEventListener("change", event => {
+  showSong(parseInt(event.target.value, 10));
+});
+
+showMeta();
+render();
+</script>
+</body>
+</html>
