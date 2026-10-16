@@ -7040,5 +7040,12 @@ rebuildPlayOrder();
 render();
 libraryReady.then(() => renderLibrary()).catch(() => renderLibrary());
 </script>
+<!-- Creative Academy integration ports (standalone-safe; no Academy repo required) -->
+<script src="academy/ports/settings.js"></script>
+<script src="academy/ports/evidence.js"></script>
+<script src="academy/ports/launch-context.js"></script>
+<script src="academy/ports/activity-provider.js"></script>
+<script src="academy/adapter/jazz-chart-provider.js"></script>
+<script src="academy/adapter/bridge.js"></script>
 </body>
 </html>

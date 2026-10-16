@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mock Academy Host — Jazz Chart Reader</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #1d1d1f; }
+    body { margin: 16px; max-width: 720px; }
+    h1 { font-size: 1.25rem; }
+    p { color: #6e6e73; font-size: 0.95rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    button {
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: 10px;
+      border: 1px solid #d2d2d7;
+      background: #f5f5f7;
+      font: inherit;
+      cursor: pointer;
+    }
+    button.primary { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
+    pre {
+      background: #f5f5f7;
+      border-radius: 12px;
+      padding: 12px;
+      overflow: auto;
+      font-size: 12px;
+      min-height: 120px;
+    }
+    a { color: #0071e3; }
+  </style>
+</head>
+<body>
+  <h1>Mock Academy Host</h1>
+  <p>
+    Local harness only. Does not recreate Creative Academy.
+    Opens the product with launch modes over the <strong>same</strong> engine.
+  </p>
+  <div class="row">
+    <button type="button" class="primary" id="btnFree">Launch free</button>
+    <button type="button" id="btnAssigned">Launch assigned</button>
+    <button type="button" id="btnWorkout">Launch workout</button>
+    <button type="button" id="btnSettings">Inject settings</button>
+    <button type="button" id="btnOpen">Open product window</button>
+  </div>
+  <p>Evidence received:</p>
+  <pre id="log">(none yet — launch after product scripts load below)</pre>
+
+  <!-- Ports + adapter (no product UI) -->
+  <script src="../ports/settings.js"></script>
+  <script src="../ports/evidence.js"></script>
+  <script src="../ports/launch-context.js"></script>
+  <script src="../ports/activity-provider.js"></script>
+  <script src="../adapter/jazz-chart-provider.js"></script>
+  <script src="../adapter/bridge.js"></script>
+  <script src="mock-host.js"></script>
+  <script>
+    MockAcademyHost.listen();
+    AcademyIntegration.evidence.subscribe(function () {
+      document.getElementById("log").textContent =
+        JSON.stringify(MockAcademyHost.receivedEvidence(), null, 2);
+    });
+
+    function openProduct(mode) {
+      var q = new URLSearchParams({
+        academyMode: mode,
+        academyLearner: MockAcademyHost.demoLearner.id,
+        academyLearnerName: MockAcademyHost.demoLearner.displayName,
+        academyCorrelation: "mock-ui-" + mode + "-" + Date.now()
+      });
+      if (mode === "assigned") q.set("academyAssignment", "assign-demo-42");
+      if (mode === "workout") q.set("academyWorkoutItem", "workout-item-7");
+      window.open("../../index.html?" + q.toString(), "jazz-chart-product");
+    }
+
+    document.getElementById("btnFree").onclick = function () {
+      MockAcademyHost.launchFree();
+      openProduct("free");
+    };
+    document.getElementById("btnAssigned").onclick = function () {
+      MockAcademyHost.launchAssigned();
+      openProduct("assigned");
+    };
+    document.getElementById("btnWorkout").onclick = function () {
+      MockAcademyHost.launchWorkout();
+      openProduct("workout");
+    };
+    document.getElementById("btnSettings").onclick = function () {
+      MockAcademyHost.injectSettings();
+      document.getElementById("log").textContent =
+        "Settings injected:\n" + JSON.stringify(AcademyIntegration.getSettings(), null, 2);
+    };
+    document.getElementById("btnOpen").onclick = function () {
+      window.open("../../index.html", "jazz-chart-product");
+    };
+  </script>
+</body>
+</html>

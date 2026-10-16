@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Academy port conformance — Jazz Chart Reader</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; max-width: 800px; color: #1d1d1f; }
+    h1 { font-size: 1.2rem; }
+    .ok { color: #1f8a46; }
+    .fail { color: #d70015; }
+    li { margin: 4px 0; }
+    #summary { font-weight: 700; margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <h1>Academy integration conformance</h1>
+  <p>Runs without Creative Academy. Opens ports + mock host only.</p>
+  <div id="summary">Running…</div>
+  <ul id="list"></ul>
+
+  <script src="../ports/settings.js"></script>
+  <script src="../ports/evidence.js"></script>
+  <script src="../ports/launch-context.js"></script>
+  <script src="../ports/activity-provider.js"></script>
+  <script src="../adapter/jazz-chart-provider.js"></script>
+  <script src="../adapter/bridge.js"></script>
+  <script src="../mock/mock-host.js"></script>
+  <script src="conformance.js"></script>
+  <script>
+    (function () {
+      function paint() {
+        var summary = document.getElementById("summary");
+        var list = document.getElementById("list");
+        try {
+          var report = AcademyConformance.run();
+          list.innerHTML = "";
+          report.results.forEach(function (r) {
+            var li = document.createElement("li");
+            li.className = r.ok ? "ok" : "fail";
+            li.textContent = (r.ok ? "PASS" : "FAIL") + " — " + r.name + (r.detail ? " (" + r.detail + ")" : "");
+            list.appendChild(li);
+          });
+          summary.className = report.failed ? "fail" : "ok";
+          summary.textContent = report.failed
+            ? ("FAILED: " + report.failed + " / " + report.results.length)
+            : ("PASSED: " + report.passed + " / " + report.results.length);
+          document.title = (report.failed ? "FAIL" : "PASS") + " — Academy conformance";
+        } catch (err) {
+          summary.className = "fail";
+          summary.textContent = "ERROR: " + (err && err.message ? err.message : String(err));
+          document.title = "FAIL — Academy conformance";
+        }
+      }
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", paint);
+      } else {
+        paint();
+      }
+    })();
+  </script>
+</body>
+</html>
