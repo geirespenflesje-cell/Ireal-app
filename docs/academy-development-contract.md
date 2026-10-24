@@ -67,6 +67,10 @@ All connected modules must be able to consume Academy Settings / Preferences / A
 - **WCAG 2.2 AA**, with selected AAA criteria where useful for music learning.
 - Protect: keyboard, visible focus, contrast, semantic controls, screen-reader structure, touch, ~44px targets where appropriate, 320px reflow, 200% zoom, reduced motion where relevant.
 
+### Platforms (web)
+
+The product is a **webpage** and must remain usable across common browsers and form factors: desktop, laptop, tablet (including iPad), and phone — portrait and landscape — without a native app shell. Standalone and Academy-embedded launches share the same responsive UI; Academy must not assume a fixed desktop-only frame.
+
 ## Architecture preference
 
 Prefer:

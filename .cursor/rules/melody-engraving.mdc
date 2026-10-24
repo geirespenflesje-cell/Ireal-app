@@ -1,0 +1,32 @@
+---
+description: Melody staff engraving — even rhythmic spacing and minimal accidentals
+globs: index.html
+alwaysApply: false
+---
+
+# Melody engraving
+
+When changing Notes / VexFlow melody layout in `index.html`, follow these rules:
+
+## Even spacing (rhythm → x)
+
+- **Proportional time**: notehead centers sit on the beat grid (`xFromBeat`). Equal duration → equal horizontal span.
+- **Tuplets**: three eighths in the time of two occupy that span evenly (slots at 0, ⅓, ⅔ of the group) — do not pack to the start or invent empty pockets between groups.
+- **Do not** apply ad-hoc compress/expand per note value that breaks proportional spacing. Eighths look tighter than quarters because they *are* shorter in time, not because of a special layout mode.
+- Collision nudges only separate true ink overlaps; they must not re-flow the bar into uneven gaps.
+
+## Accidentals (minimal footprint)
+
+- Accidentals sit **flush** to their notehead (~0.5–1px air). Use `snugMelodyAccidentalSvg` after staffs are in the DOM (`getBBox` fails when detached).
+- Bravura **advance width ≫ ink** — never reserve layout space from font advance; use snugged ink bounds for collision.
+- A `#` / `b` / `♮` must not open a wide column or shove the next beam away. Hang left of the head; keep the rhythmic grid for heads.
+
+## Generate (reading practice)
+
+When extending Generate pick mode: note values **and** modifiers (Dot, Triol, Tie, #, ♭, ♮) are opt-in. No #/♭ → white-key naturals only. Triols/ties/dots only appear when those toggles are on.
+
+## Checklist before shipping layout changes
+
+1. Heads still read on the beat / tuplet grid?
+2. Consecutive equal groups (e.g. two eighth triols) have no fake empty pocket?
+3. Accidentals tight to heads without colliding neighbors?
